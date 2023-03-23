@@ -5,9 +5,8 @@
 
 trigger:
 - main
-
 pool:
-  vmImage:ubuntu-latest
+  name: default
 
 variables:
   phpVersion: 7.2
