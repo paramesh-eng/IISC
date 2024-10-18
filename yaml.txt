@@ -1,0 +1,59 @@
+# Docker
+# Build a Docker image
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger:
+- master
+
+resources:
+- repo: self
+
+variables:
+  tag: '$(Build.BuildId)'
+
+stages:
+- stage: Build
+  displayName: Build image 
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: ubuntu-latest 
+    steps:
+    - task: Docker@1
+      displayName: Build an image
+      inputs:
+        containerregistrytype: 'Azure Container Registry'        
+        azureSubscriptionEndpoint: 'Microsoft Azure Enterprise (788985ea-d4ab-4238-843a-a231a740c134)'
+        azureContainerRegistry:  '{"loginServer":"acrtestparam007.azurecr.io", "id" : "/subscriptions/788985ea-d4ab-4238-843a-a231a740c134/resourceGroups/ACR/providers/Microsoft.ContainerRegistry/registries/ACRTESTPARAM007"}'
+        command: 'Build an image'
+        dockerFile: '**/Dockerfile'
+        imageName: 'acrtestparam007.azurecr.io/aspbuild:$(Build.BuildId)'
+
+    - task: CmdLine@2
+      displayName: "Download and install Trivy"
+      inputs:
+        script: |
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          sudo chmod 666 /var/run/docker.sock
+          trivy -v  
+          
+    - task: CmdLine@2
+      displayName: Scan
+      inputs:
+        script: |
+          trivy image --severity LOW,MEDIUM --format template --template "@/junit.tpl" -o junit-report-low-med.xml phpwebacr86.azurecr.io/php-website:$(Build.BuildId)
+          trivy image --severity HIGH,CRITICAL --format template --template "@/junit.tpl" -o junit-report-high-crit.xml phpwebacr86.azurecr.io/php-website:$(Build.BuildId)
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/junit-report-high-crit.xml'
+        mergeTestResults: true
+        failTaskOnFailedTests: false
+        testRunTitle: 'Trivy Vulnerabilities'
+      condition: 'always()'
